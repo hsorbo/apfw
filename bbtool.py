@@ -5,6 +5,7 @@ from ctypes.wintypes import HDC
 from glob import has_magic
 import struct
 import zlib
+import sys
 from Crypto.Cipher import AES
 
 
@@ -93,6 +94,10 @@ class BaseBinaryContainer():
     def to_bytes(self) -> bytes:
         return self.header.to_bytes() + self.data + struct.pack(">I", self.checksum)
 
+    @ staticmethod
+    def cksum(hdr, data) -> bool:
+        return zlib.adler32(hdr + data)
+
     def validate(self) -> bool:
         return self.checksum == zlib.adler32(self.header.to_bytes() + self.data)
 
@@ -107,6 +112,10 @@ class Decryptor():
             derived_key[i] = key2[i] ^ (i + 0x19)
         return bytes(derived_key)
 
+    def chunks(lst, n):
+        for i in range(0, len(lst), n):
+            yield lst[i:i + n]
+
     @staticmethod
     def decrypt_chunk(encrypted_data, key, iv):
         cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -114,17 +123,21 @@ class Decryptor():
         bytes_left = len(encrypted_data)
         while bytes_left:
             if bytes_left > 0x10:
-                decrypted_data += bytearray(cipher.decrypt(
-                    encrypted_data[-bytes_left:-(bytes_left-0x10)]))
-                bytes_left -= 0x10
+                dd = encrypted_data[-bytes_left:-(bytes_left-0x10)]
+                d = cipher.decrypt(dd)
+                decrypted_data += bytearray(d)
             elif bytes_left == 0x10:
-                decrypted_data += bytearray(
-                    cipher.decrypt(encrypted_data[-bytes_left:]))
-                bytes_left = 0
+                dd = encrypted_data[-bytes_left:]
+                d = cipher.decrypt(dd)
+                decrypted_data += bytearray(d)
             else:
-                decrypted_data += encrypted_data[-bytes_left:]
-                bytes_left = 0
+                dd = encrypted_data[-bytes_left:]
+                decrypted_data += dd
 
+            if bytes_left > 0x10:
+                bytes_left -= 0x10
+            else:
+                bytes_left = 0
         return decrypted_data
 
     @ staticmethod
@@ -155,24 +168,47 @@ class Decryptor():
                                   hex(container.header.model))
         key = Decryptor.derive_key(key)
         iv = HDR_MAGIC+bytes([container.header.IV])
-        print(len(iv))
         decrypted_data = bytearray()
-        remaining_length = len(container.data)
-        chunk_length = 0x8000
-        while remaining_length:
-            if remaining_length > chunk_length:
-                data = container.data[-remaining_length:-
-                                      (remaining_length-chunk_length)]
-            else:
-                data = container.data[-remaining_length:]
-
+        for data in Decryptor.chunks(container.data, 0x8000):
             r = Decryptor.decrypt_chunk(data, key, iv)
             decrypted_data += bytearray(r)
-
-            if remaining_length > chunk_length:
-                remaining_length -= chunk_length
-            else:
-                remaining_length = 0
-
-            print(remaining_length)
         return bytes(decrypted_data)
+
+
+def loader(filename: str):
+    print("Loading %s" % filename)
+
+    def nester(data):
+        cc = BaseBinaryContainer.from_bytes(data)
+        if cc.is_encrypted():
+            print("decrypting")
+            fw = Decryptor.decrypt(cc)
+            if BaseBinaryContainer.cksum(cc.header.to_bytes(), fw) == cc.checksum:
+                print("checksum (encrypted) success")
+            else:
+                print("checksum (encrypted) failed")
+                sys.exit()
+        else:
+            if cc.validate():
+                print("checksum success")
+            else:
+                print("checksum failed")
+                sys.exit()
+
+        if cc.is_nested():
+            print("de-nesting")
+            nester(cc.data)
+        else:
+            fw = cc.data
+    try:
+        nester(open(filename, "rb").read())
+    except BaseBinaryError as e:
+        print(e)
+        sys.exit()
+
+
+if __name__ == "__main__":
+    loader(sys.argv[1])
+
+# find . -name "*.basebinary" -exec ./bbtool.py {} \;
+#open("test.bin", "wb").write(cc)
