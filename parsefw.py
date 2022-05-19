@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import struct
 
 f = open('7.4.2.basebinary', 'rb')
@@ -8,30 +9,29 @@ offset = 0
 parsed_last_header = False
 
 while not parsed_last_header:
-	header = buf[offset:offset+32]
+    header = buf[offset:offset+32]
 
-	magic = header[0:14]
-	assert magic == 'APPLE-FIRMWARE'
+    magic = header[0:14].decode("utf-8")
 
-	print '[Header at offset 0x%08x]' % offset
+    assert magic == 'APPLE-FIRMWARE'
 
-	product_id = struct.unpack('>I', header[16:20])[0]
-	print 'ProductId: 0x%08x' % product_id
+    print('[Header at offset 0x%08x]' % offset)
 
-	version_id = struct.unpack('>I', header[20:24])[0]
-	print 'VersionId: 0x%08x' % version_id
+    product_id = struct.unpack('>I', header[16:20])[0]
+    print('ProductId: 0x%08x' % product_id)
 
-	flags = struct.unpack('>I', header[24:28])[0]
-	print '    Flags: 0x%08x' % flags
+    version_id = struct.unpack('>I', header[20:24])[0]
+    print('VersionId: 0x%08x' % version_id)
 
-	unknown = struct.unpack('>I', header[28:32])[0]
-	print '  Unknown: 0x%08x' % unknown
+    flags = struct.unpack('>I', header[24:28])[0]
+    print('    Flags: 0x%08x' % flags)
 
-	print
+    unknown = struct.unpack('>I', header[28:32])[0]
+    print('  Unknown: 0x%08x' % unknown)
 
-	if flags & 2 != 0:
-		parsed_last_header = True
+    if flags & 2 != 0:
+        parsed_last_header = True
 
-	offset += len(header)
+    offset += len(header)
 
-print 'Last header ended at 0x%08x' % offset
+print('Last header ended at 0x%08x' % offset)
