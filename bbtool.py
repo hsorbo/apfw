@@ -144,7 +144,7 @@ class Decryptor():
     def decrypt(container: BaseBinaryContainer) -> bytes:
         keys = {
             # 3 : "",
-            # 102: "",
+            102: "1f1ba10645645be2bab3c80f2e8eaae1",
             # 104 : "",
             # 105 : "",
             # 106 : "",
@@ -186,7 +186,7 @@ def loader(filename: str):
             if BaseBinaryContainer.cksum(cc.header.to_bytes(), fw) == cc.checksum:
                 print("checksum (encrypted) success")
             else:
-                print("checksum (encrypted) failed")
+                print("checksum (encrypted) failed (may not fail on 0x66)")
                 sys.exit()
         else:
             if cc.validate():
