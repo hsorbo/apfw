@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # Heavily borrowed from: https://github.com/x56/airpyrt-tools
-
-from ctypes.wintypes import HDC
-from glob import has_magic
 import struct
 import zlib
 import sys
 from Crypto.Cipher import AES
+import argparse
 
 
 HDR_MAGIC = b'APPLE-FIRMWARE\x00'
@@ -67,13 +65,14 @@ class BaseBinaryHeader():
             return False
         return True
 
+    def to_str(self):
+        return "Model: 0x%x, Version: 0x%x, Flags: 0x%x, IV: 0x%s" % (self.model, self.version, self.flags, self.IV)
+        # return "iv %x a:%x b%x c:%x d:%x" % (
+        #    self.IV, self.unknown1, self.unknown2, self.unknown3, self.unknown4)
+
 
 class BaseBinaryContainer():
-    def __init__(
-            self,
-            header,
-            checksum,
-            data: bytes) -> None:
+    def __init__(self, header, checksum, data: bytes) -> None:
         self.checksum = checksum
         self.data = data
         self.header = header
@@ -102,7 +101,10 @@ class BaseBinaryContainer():
         return self.checksum == zlib.adler32(self.header.to_bytes() + self.data)
 
 
-class Decryptor():
+class ModelInfo():
+    def __init__(self, name, key):
+        self.name = name
+        self.key = key
 
     @ staticmethod
     def derive_key(key: str) -> bytes:
@@ -111,6 +113,36 @@ class Decryptor():
         for i in range(len(key2)):
             derived_key[i] = key2[i] ^ (i + 0x19)
         return bytes(derived_key)
+
+    @ staticmethod
+    def get_info(model: int):
+        # names https://web.archive.org/web/20210612211745/http://www.sallonoroff.co.uk/blog/2015/07/apple-airport-firmware-updates/
+        # keys https://github.com/x56/airpyrt-tools
+        models = {
+            3: ("AirPort Extreme 802.11g", None),
+            102: ("AirPort Express 802.11g", "1f1ba10645645be2bab3c80f2e8eaae1"),
+            104: ("AirPort Extreme 802.11n (1st Generation)", None),
+            105: ("AirPort Extreme 802.11n (2nd Generation)", None),
+            106: ("AirPort Time Capsule 802.11n (1st Generation)", None),
+            107: ("AirPort Express 802.11n (1st Generation)", "5249c351028bf1fd2bd1849e28b23f24"),
+            108: ("AirPort Extreme 802.11n (3rd Generation)", "bb7deb0970d8ee2e00fa46cb1c3c098e"),
+            109: ("AirPort Time Capsule 802.11n (2nd Generation)", None),
+            113: ("AirPort Time Capsule 802.11n (3rd Generation)", None),
+            114: ("AirPort Extreme 802.11n (4th Generation)", None),
+            115: ("AirPort Express 802.11n (2nd Generation)", "1075e806f4770cd4763bd285a64e9174"),
+            116: ("AirPort Time Capsule 802.11n (4th Generation)", None),
+            117: ("AirPort Extreme 802.11n (5th Generation)", None),
+            119: ("AirPort Time Capsule 802.11ac", None),
+            120: ("AirPort Extreme 802.11ac", "688cdd3b1b6bdda207b6cec2735292d2"),
+        }
+        info = models.get(model)
+        if info is None:
+            return ModelInfo("Unknown model %s" % hex(model), None)
+        (name, key) = info
+        return ModelInfo(name, None if key is None else ModelInfo.derive_key(key))
+
+
+class Decryptor():
 
     def chunks(lst, n):
         for i in range(0, len(lst), n):
@@ -141,65 +173,41 @@ class Decryptor():
         return decrypted_data
 
     @ staticmethod
-    def decrypt(container: BaseBinaryContainer) -> bytes:
-        keys = {
-            # 3 : "",
-            102: "1f1ba10645645be2bab3c80f2e8eaae1",
-            # 104 : "",
-            # 105 : "",
-            # 106 : "",
-            107: "5249c351028bf1fd2bd1849e28b23f24",
-            108: "bb7deb0970d8ee2e00fa46cb1c3c098e",
-            # 109 : "",
-            # 113 : "",
-            # 114 : "",
-            115: "1075e806f4770cd4763bd285a64e9174",
-            # 116 : "",
-            # 117 : "",
-            # 119 : "",
-            120: "688cdd3b1b6bdda207b6cec2735292d2",
-        }
-
-        if not container.is_encrypted():
-            return container
-        key = keys.get(container.header.model)
-        if key is None:
-            raise BaseBinaryError("Unknown model %s" %
-                                  hex(container.header.model))
-        key = Decryptor.derive_key(key)
-        iv = HDR_MAGIC+bytes([container.header.IV])
+    def decrypt_raw(key: bytes, iv: bytes, data: bytes) -> bytes:
         decrypted_data = bytearray()
-        for data in Decryptor.chunks(container.data, 0x8000):
+        for data in Decryptor.chunks(data, 0x8000):
             r = Decryptor.decrypt_chunk(data, key, iv)
             decrypted_data += bytearray(r)
         return bytes(decrypted_data)
 
+    @ staticmethod
+    def decrypt(container: BaseBinaryContainer, key: bytes) -> bytes:
+        return Decryptor.decrypt_raw(key, HDR_MAGIC+bytes([container.header.IV]), container.data)
 
-def loader(filename: str):
-    print("Loading %s" % filename)
 
+def extract(filename: str):
     def nester(data):
         cc = BaseBinaryContainer.from_bytes(data)
+        info = ModelInfo.get_info(cc.header.model)
+        print("%s %s" % (info.name, cc.header.to_str()))
         if cc.is_encrypted():
-            print("decrypting")
-            fw = Decryptor.decrypt(cc)
-            if BaseBinaryContainer.cksum(cc.header.to_bytes(), fw) == cc.checksum:
-                print("checksum (encrypted) success")
+            if(info.key is None):
+                raise BaseBinaryError("Can't decrypt, no known key")
             else:
-                print("checksum (encrypted) failed (may not fail on 0x66)")
-                sys.exit()
-        else:
-            if cc.validate():
-                print("checksum success")
-            else:
-                print("checksum failed")
-                sys.exit()
+                fw = Decryptor.decrypt(cc, info.key)
+                checksum_of = fw if cc.header.model != 102 else cc.data
+                if BaseBinaryContainer.cksum(cc.header.to_bytes(), checksum_of) == cc.checksum:
+                    return fw
+                else:
+                    raise BaseBinaryError("checksum failed")
+
+        if not cc.validate():
+            raise BaseBinaryError("checksum failed")
 
         if cc.is_nested():
-            print("de-nesting")
             nester(cc.data)
         else:
-            fw = cc.data
+            return(cc.data)
     try:
         nester(open(filename, "rb").read())
     except BaseBinaryError as e:
@@ -207,8 +215,11 @@ def loader(filename: str):
         sys.exit()
 
 
-if __name__ == "__main__":
-    loader(sys.argv[1])
-
 # find . -name "*.basebinary" -exec ./bbtool.py {} \;
-#open("test.bin", "wb").write(cc)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--extract", help="file to extract")
+    parser.add_argument("--output", help="output file to write to")
+    args = parser.parse_args()
+    if(args.extract):
+        extract(args.extract)
