@@ -147,24 +147,17 @@ def chunks(lst, n):
         yield lst[i:i + n]
 
 
-class Decryptor():
+def decrypt_firmware(key: bytes, iv: bytes, data: bytes) -> bytes:
+    decrypted_data = bytearray()
+    for encrypted_data in chunks(data, 0x8000):
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        for x in chunks(encrypted_data, 0x10):
+            decrypted_data += x if len(x) < 0x10 else cipher.decrypt(x)
+    return bytes(decrypted_data)
 
-    @ staticmethod
-    def decrypt_raw(key: bytes, iv: bytes, data: bytes) -> bytes:
-        def decrypt_chunk(encrypted_data, key, iv):
-            cipher = AES.new(key, AES.MODE_CBC, iv)
-            decrypted_data = bytearray()
-            for x in chunks(encrypted_data, 0x10):
-                decrypted_data += x if len(x) < 0x10 else cipher.decrypt(x)
-            return decrypted_data
-        decrypted_data = bytearray()
-        for data in chunks(data, 0x8000):
-            decrypted_data += bytearray(decrypt_chunk(data, key, iv))
-        return bytes(decrypted_data)
 
-    @ staticmethod
-    def decrypt(container: BaseBinaryContainer, key: bytes) -> bytes:
-        return Decryptor.decrypt_raw(key, HDR_MAGIC+bytes([container.header.IV]), container.data)
+def decrypt_container(container: BaseBinaryContainer, key: bytes) -> bytes:
+    return decrypt_firmware(key, HDR_MAGIC+bytes([container.header.IV]), container.data)
 
 
 def extract(data):
@@ -175,12 +168,11 @@ def extract(data):
         if(info.key is None):
             raise BaseBinaryError("Can't decrypt, no known key")
         else:
-            fw = Decryptor.decrypt(cc, info.key)
+            fw = decrypt_container(cc, info.key)
             checksum_of = fw if cc.header.model != 102 else cc.data
-            if BaseBinaryContainer.cksum(cc.header.to_bytes(), checksum_of) == cc.checksum:
-                return fw
-            else:
+            if BaseBinaryContainer.cksum(cc.header.to_bytes(), checksum_of) != cc.checksum:
                 raise BaseBinaryError("checksum failed")
+            return fw
 
     if not cc.validate():
         raise BaseBinaryError("checksum failed")
