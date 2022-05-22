@@ -185,34 +185,25 @@ class Decryptor():
         return Decryptor.decrypt_raw(key, HDR_MAGIC+bytes([container.header.IV]), container.data)
 
 
-def extract(filename: str):
-    def nester(data):
-        cc = BaseBinaryContainer.from_bytes(data)
-        info = ModelInfo.get_info(cc.header.model)
-        print("%s %s" % (info.name, cc.header.to_str()))
-        if cc.is_encrypted():
-            if(info.key is None):
-                raise BaseBinaryError("Can't decrypt, no known key")
-            else:
-                fw = Decryptor.decrypt(cc, info.key)
-                checksum_of = fw if cc.header.model != 102 else cc.data
-                if BaseBinaryContainer.cksum(cc.header.to_bytes(), checksum_of) == cc.checksum:
-                    return fw
-                else:
-                    raise BaseBinaryError("checksum failed")
-
-        if not cc.validate():
-            raise BaseBinaryError("checksum failed")
-
-        if cc.is_nested():
-            nester(cc.data)
+def extract(data):
+    cc = BaseBinaryContainer.from_bytes(data)
+    info = ModelInfo.get_info(cc.header.model)
+    print("%s %s" % (info.name, cc.header.to_str()))
+    if cc.is_encrypted():
+        if(info.key is None):
+            raise BaseBinaryError("Can't decrypt, no known key")
         else:
-            return(cc.data)
-    try:
-        nester(open(filename, "rb").read())
-    except BaseBinaryError as e:
-        print(e)
-        sys.exit()
+            fw = Decryptor.decrypt(cc, info.key)
+            checksum_of = fw if cc.header.model != 102 else cc.data
+            if BaseBinaryContainer.cksum(cc.header.to_bytes(), checksum_of) == cc.checksum:
+                return fw
+            else:
+                raise BaseBinaryError("checksum failed")
+
+    if not cc.validate():
+        raise BaseBinaryError("checksum failed")
+
+    return cc.data if not cc.is_nested() else extract(cc.data)
 
 
 # find . -name "*.basebinary" -exec ./bbtool.py {} \;
@@ -222,4 +213,13 @@ if __name__ == "__main__":
     parser.add_argument("--output", help="output file to write to")
     args = parser.parse_args()
     if(args.extract):
-        extract(args.extract)
+        try:
+            input = open(args.extract, "rb").read()
+            output = extract(input)
+            if(args.output):
+                open(args.output, "wb").write(output)
+        except BaseBinaryError as e:
+            print(e)
+            sys.exit(1)
+    else:
+        parser.print_help()
