@@ -167,12 +167,11 @@ def extract(data):
     if cc.is_encrypted():
         if(info.key is None):
             raise BaseBinaryError("Can't decrypt, no known key")
-        else:
-            fw = decrypt_container(cc, info.key)
-            checksum_of = fw if cc.header.model != 102 else cc.data
-            if BaseBinaryContainer.cksum(cc.header.to_bytes(), checksum_of) != cc.checksum:
-                raise BaseBinaryError("checksum failed")
-            return fw
+        fw = decrypt_container(cc, info.key)
+        checksum_of = fw if cc.header.model != 102 else cc.data
+        if BaseBinaryContainer.cksum(cc.header.to_bytes(), checksum_of) != cc.checksum:
+            raise BaseBinaryError("checksum failed")
+        return fw
 
     if not cc.validate():
         raise BaseBinaryError("checksum failed")
