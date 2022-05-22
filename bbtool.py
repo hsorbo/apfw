@@ -142,42 +142,24 @@ class ModelInfo():
         return ModelInfo(name, None if key is None else ModelInfo.derive_key(key))
 
 
+def chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
 class Decryptor():
-
-    def chunks(lst, n):
-        for i in range(0, len(lst), n):
-            yield lst[i:i + n]
-
-    @staticmethod
-    def decrypt_chunk(encrypted_data, key, iv):
-        cipher = AES.new(key, AES.MODE_CBC, iv)
-        decrypted_data = bytearray()
-        bytes_left = len(encrypted_data)
-        while bytes_left:
-            if bytes_left > 0x10:
-                dd = encrypted_data[-bytes_left:-(bytes_left-0x10)]
-                d = cipher.decrypt(dd)
-                decrypted_data += bytearray(d)
-            elif bytes_left == 0x10:
-                dd = encrypted_data[-bytes_left:]
-                d = cipher.decrypt(dd)
-                decrypted_data += bytearray(d)
-            else:
-                dd = encrypted_data[-bytes_left:]
-                decrypted_data += dd
-
-            if bytes_left > 0x10:
-                bytes_left -= 0x10
-            else:
-                bytes_left = 0
-        return decrypted_data
 
     @ staticmethod
     def decrypt_raw(key: bytes, iv: bytes, data: bytes) -> bytes:
+        def decrypt_chunk(encrypted_data, key, iv):
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            decrypted_data = bytearray()
+            for x in chunks(encrypted_data, 0x10):
+                decrypted_data += x if len(x) < 0x10 else cipher.decrypt(x)
+            return decrypted_data
         decrypted_data = bytearray()
-        for data in Decryptor.chunks(data, 0x8000):
-            r = Decryptor.decrypt_chunk(data, key, iv)
-            decrypted_data += bytearray(r)
+        for data in chunks(data, 0x8000):
+            decrypted_data += bytearray(decrypt_chunk(data, key, iv))
         return bytes(decrypted_data)
 
     @ staticmethod
