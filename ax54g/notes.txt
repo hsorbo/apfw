@@ -1,0 +1,23 @@
+0x80010000-0x80368130
+0x80300000-0x802e4130
+
+
+
+//https://github.com/Vector35/binaryninja-api/issues/2971
+//[{"start":0,"length":2965808,"data_offset":0,"data_length":2965808,"flags":5,"auto_defined":true}, {"start":2965808,"length":540672,"data_offset":2965808,"data_length":540672,"flags":14,"auto_defined":true}]
+[{"start":0,"length":2965808,"data_offset":0,"data_length":2965808,"flags":5,"auto_defined":true}]
+bv.add_auto_segment(0x802e4130, 0x84000, 2965808, 0x84000, SegmentFlag.SegmentWritable | SegmentFlag.SegmentReadable)
+
+
+//800186c0 bzero(&data_80368130, 0x1d35a0) -> 0x80368130 -> 0x8053B6D0
+bv.add_auto_segment(0x80368130, 0x1d35a0, 0, 0, SegmentFlag.SegmentWritable | SegmentFlag.SegmentReadable)
+
+kicker inn dead code: 
+    sub_80010394: 0x80334470 -> 0x80334488
+
+[{"start":0,"length":3506480,"data_offset":0,"data_length":3506480,"flags":5,"auto_defined":true}, {"start":0x80300000,"length":0x100,"data_offset":0,"data_length":0,"flags":5,"auto_defined":true}]
+bv.add_auto_segment(0x802e4130, 0x1BED0+0x100000, 0x33C260, 0x1BED0, SegmentFlag.SegmentWritable | SegmentFlag.SegmentReadable)
+bv.add_auto_segment(0x802e4130, 0x1BED0+0x100000, 0x33C260, 0x1BED0, SegmentFlag.SegmentWritable | SegmentFlag.SegmentReadable)
+bv.add_auto_segment(0x80300000, 0x300000, 0, 0, SegmentFlag.SegmentWritable | SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
+>>> bv.add_auto_segment(0x80030000, 0x100000, 0, 0, SegmentFlag.SegmentContainsCode | SegmentFlag.SegmentWritable | SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
+>>> bv.add_auto_segment(0x80030000, 0x100000, 0, 0, SegmentFlag.SegmentContainsCode | SegmentFlag.SegmentWritable | SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
