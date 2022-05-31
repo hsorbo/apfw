@@ -9,8 +9,8 @@
 0x80011154 hs_ncdl
 0x800111f0 hs_fw_header_03
 0x80011460 update
-0x80011b34 update2
-0x80011ea0 hs_fw_canthisbeit
+0x80011b34 sysFirmwareUpdateFull
+0x80011ea0 hs_verify_fw
 0x80013d30 hs_audio1
 0x80014394 sysClkRateGet
 0x800158e0 some_key_shuffle
@@ -413,3 +413,7 @@
 0x802d5ea8 windDelay
 0x802d7af4 dllInsert
 0x802d7b9c dllRemove
+0x80271e74 ioctl
+0x80272578 open
+0x8027b914 ttyDevCreate
+0x802735f8 iosInit
