@@ -11,7 +11,7 @@ def qmu():
     # -daemonize
     qemu = """
         qemu-system-mipsel\
-        -device loader,file=6.3.firmware,addr=0x80010000,cpu-num=0\
+        -device loader,file=6.3.vxworks,addr=0x80010000,cpu-num=0\
         -device loader,file=6.3.basebinary,addr=0x80600000,cpu-num=0\
         -device loader,addr=0x8001001c,cpu-num=0\
         -s -S -nographic
