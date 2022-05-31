@@ -70,38 +70,6 @@ def dump_firmware(r: r2pipe):
 def test_firmware(r: r2pipe):
     setup_update(r)
     r.cmd("dcu 0x8001171c")  # before key scramble
-    #r.cmd("dcu 0x8016e308; echo start aes_expand_keys")
-    #r.cmd("dcu 0x80171e40; echo after aes_expand_keys")
-
-    #r.cmd("wtf fw.before 1572936 @0x80600000")
-
-    # r.cmd("dcu 0x80171e3c")  # pre bmf4
-    # 0x87fffa78  0400 0000 0601 ba1a 587a 44c2 9b91 eb2b  ........XzD....+
-    # 0x87fffa88  0ba8 8dc9 c55c 6731 9d26 23f3 06b7 c8d8  .....\g1.&#.....
-    # 0x87fffa98  0d1f 4511 0732 e5e6 9a14 c615 9ca3 0ecd  ..E..2..........
-    # 0x87fffaa8  91bc 4bdc 6681 6367 fc95 a572 6036 abbf  ..K.f.cg...r`6..
-    # 0x87fffab8  f18a e063 1060 98c6 ecf5 3db4 8cc3 960b  ...c.`....=.....
-    # 0x87fffac8  7d49 7668 3b58 dd39 d7ad e08d 5b6e 7686  }Ivh;X.9....[nv.
-    # 0x87fffad8  2627 00ee d73b f5ce 0096 1543 5bf8 63c5  &'...;.....C[.c.
-    # 0x87fffae8  7ddf 632b 09c0 0431 0956 1172 52ae 72b7  }.c+...1.V.rR.r.
-    # 0x87fffaf8  2f71 119c 2a42 da24 2314 cb56 71ba b9e1  /q..*B.$#..Vq...
-    # 0x87fffb08  5ecb a87d 2e80 257c 0d94 ee2a 7c2e 57cb  ^..}..%|...*|.W.
-    # 0x87fffb18  22e5 ffb6 c196 6bef cc02 85c5 b02c d20e  ".....k......,..
-    # 0x87fffb28  92c9 2db8                                ..-.
-
-    # aes.py
-    # 0:	 06 01 ba 1a 58 7a 44 c2 9b 91 eb 2b 0b a8 8d c9
-    # 10:	 c5 5c 67 31 9d 26 23 f3 06 b7 c8 d8 0d 1f 45 11
-    # 20:	 07 32 e5 e6 9a 14 c6 15 9c a3 0e cd 91 bc 4b dc
-    # 30:	 66 81 63 67 fc 95 a5 72 60 36 ab bf f1 8a e0 63
-    # 40:	 10 60 98 c6 ec f5 3d b4 8c c3 96 0b 7d 49 76 68
-    # 50:	 3b 58 dd 39 d7 ad e0 8d 5b 6e 76 86 26 27 00 ee
-    # 60:	 d7 3b f5 ce 00 96 15 43 5b f8 63 c5 7d df 63 2b
-    # 70:	 09 c0 04 31 09 56 11 72 52 ae 72 b7 2f 71 11 9c
-    # 80:	 2a 42 da 24 23 14 cb 56 71 ba b9 e1 5e cb a8 7d
-    # 90:	 2e 80 25 7c 0d 94 ee 2a 7c 2e 57 cb 22 e5 ff b6
-    # a0:	 c1 96 6b ef cc 02 85 c5 b0 2c d2 0e 92 c9 2d b8
-    # r.cmd("dcu 0x8016e324")  # key_size
 
 
 def current_stuff(r: r2pipe):
