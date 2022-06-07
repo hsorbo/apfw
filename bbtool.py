@@ -227,14 +227,14 @@ def main(args):
         print("Prod\tModel")
         for k, v in KNOWN_MODELS.items():
             print("%s\t%s" % ("0x{:02x}".format(k), v[0]))
-    elif args.subparser_name == "extract":
+    elif args.subparser_name in ["extract", "info"]:
         input_file = open(args.input, "rb").read()
         output = extract(input_file)
-        if(args.output):
+        if args.subparser_name == "extract":
             open(args.output, "wb").write(output)
     elif args.subparser_name == "create":
         input_file = open(args.input, "rb").read()
-        pid = int(args.product_id, 16)
+        pid = int(args.model, 16)
         ver = int(args.product_version, 16)
         output = create(pid, ver, input_file, args.encrypt)
         if(args.output):
@@ -244,6 +244,11 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(help='Verbs', dest='subparser_name')
+    info_parser = subparsers.add_parser(
+        'info', help='Dump info about a basebinary')
+    info_parser.add_argument(
+        "-i", "--input", required="info" in sys.argv, help="input file")
+
     extract_parser = subparsers.add_parser(
         'extract', help='Extract basebinary')
     extract_parser.add_argument(
@@ -253,9 +258,9 @@ if __name__ == "__main__":
     create_parser = subparsers.add_parser(
         'create', help='Create basebinary')
     create_parser.add_argument(
-        "-pid", "--product-id",
+        "-m", "--model",
         required="create" in sys.argv,
-        help="Product id when creating basebinary")
+        help="Model id when creating basebinary")
     create_parser.add_argument(
         "-pv", "--product-version",
         required="create" in sys.argv,
