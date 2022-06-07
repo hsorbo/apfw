@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import struct
 import zlib
 import sys
@@ -34,28 +33,36 @@ KNOWN_MODELS = {
 
 
 def shuffle_key(key: bytes) -> bytes:
-    """
-    Apple does a shuffle of the decryption key stored in firmware
-    """
+    # Apple does a shuffle of the decryption key stored in firmware
     return bytes([key[i] ^ (i + 0x19) for i in range(len(key))])
 
 
 def decrypt_payload(key: bytes, iv: bytes, input: bytes) -> bytes:
+
     def chunkify(lst, n):
         for i in range(0, len(lst), n):
             yield lst[i:i + n]
-    output = bytearray()
-    for chunk in chunkify(input, 0x8000):
+
+    def decrypt_chunk(chunk):
         copy_size = len(chunk) % 0x10
         decrypt_size = len(chunk) - copy_size
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        output += cipher.decrypt(chunk[0:decrypt_size])
-        output += chunk[decrypt_size:]
+        return cipher.decrypt(chunk[0:decrypt_size]) + chunk[decrypt_size:]
+
+    chunks = map(decrypt_chunk, chunkify(input, 0x8000))
+
+    # return bytes(reduce(lambda x, y: x + y, chunks, bytearray())) is slow: (
+    output = bytearray()
+    for chunk in chunks:
+        output += chunk
     return bytes(output)
 
 
 class BaseBinaryError(Exception):
-    pass
+    @staticmethod
+    def checksum_failed(expected, got):
+        return BaseBinaryError("checksum failed, expected %s, got %s" % (
+            hex(expected), hex(got)))
 
 
 class BaseBinaryHeader():
@@ -65,10 +72,10 @@ class BaseBinaryHeader():
             flags,
             version: int,
             iv,
-            unknown1,
-            unknown2,
-            unknown3,
-            unknown4) -> None:
+            unknown1=0,
+            unknown2=0,
+            unknown3=0,
+            unknown4=0) -> None:
         self.model = model
         self.flags = flags
         self.version = version
@@ -110,7 +117,7 @@ class BaseBinaryHeader():
 
 
 class BaseBinaryContainer():
-    def __init__(self, header, checksum, data: bytes) -> None:
+    def __init__(self, header: bytes, checksum: int, data: bytes) -> None:
         self.checksum = checksum
         self.data = data
         self.header = header
@@ -131,12 +138,12 @@ class BaseBinaryContainer():
     def to_bytes(self) -> bytes:
         return self.header.to_bytes() + self.data + CKSUM_FMT.pack(self.checksum)
 
-    @ staticmethod
-    def cksum(hdr, data) -> bool:
-        return zlib.adler32(hdr + data)
-
-    def validate(self) -> bool:
-        return self.checksum == zlib.adler32(self.header.to_bytes() + self.data)
+    def validate(self, throw: bool = False) -> bool:
+        expected = zlib.adler32(self.header.to_bytes() + self.data)
+        ok = self.checksum == expected
+        if (not ok) and throw:
+            raise BaseBinaryError.checksum_failed(expected, self.checksum)
+        return ok
 
     def to_str(self):
         return "Model: 0x%x, Version: 0x%x, Flags: 0x%x, IV: 0x%s, Cksum: %s" % (
@@ -146,23 +153,28 @@ class BaseBinaryContainer():
             self.header.IV,
             hex(self.checksum))
 
+    @ staticmethod
+    def create(header: BaseBinaryHeader, payload: bytes):
+        cksum = zlib.adler32(header.to_bytes() + payload)
+        cont = BaseBinaryContainer(header, cksum, payload)
+        cont.validate(True)
+        return cont
+
 
 class ModelInfo():
-    def __init__(self, name, key):
+    def __init__(self, name, key, post_cksum):
         self.name = name
         self.key = key
+        self.post_cksum = post_cksum
 
     @ staticmethod
     def get_info(model: int):
         info = KNOWN_MODELS.get(model)
         if info is None:
-            return ModelInfo("Unknown model %s" % hex(model), None)
+            raise BaseBinaryError("Unknown model %s" % hex(model), None)
         (name, key) = info
-        return ModelInfo(name, None if key is None else shuffle_key(bytes.fromhex(key)))
-
-
-def decrypt_container(container: BaseBinaryContainer, key: bytes) -> bytes:
-    return decrypt_payload(key, HDR_MAGIC+bytes([container.header.IV]), container.data)
+        real_key = None if key is None else shuffle_key(bytes.fromhex(key))
+        return ModelInfo(name, real_key, model != 102)
 
 
 def extract(data):
@@ -172,16 +184,19 @@ def extract(data):
     if cc.is_encrypted():
         if(info.key is None):
             raise BaseBinaryError("Can't decrypt, no known key")
-        payload = decrypt_container(cc, info.key)
-        checksum_of = payload if cc.header.model != 102 else cc.data
-        calculated_cksum = BaseBinaryContainer.cksum(
-            cc.header.to_bytes(), checksum_of)
+        payload = decrypt_payload(
+            info.key, HDR_MAGIC+bytes([cc.header.IV]), cc.data)
+        checksum_of = payload if info.post_cksum else cc.data
+        calculated_cksum = zlib.adler32(cc.header.to_bytes() + checksum_of)
         if calculated_cksum != cc.checksum:
-            raise BaseBinaryError("checksum failed")
-        if cc.header.model == 102:
+            raise BaseBinaryError.checksum_failed(
+                cc.checksum, calculated_cksum)
+        if not info.post_cksum:
             secondary_cksum = CKSUM_AX54G_FMT.unpack(payload[-0x20:])[0]
-            if(secondary_cksum != zlib.adler32(payload[:-0x20])):
-                raise BaseBinaryError("secondary checksum failed")
+            expected_secondary = zlib.adler32(payload[:-0x20])
+            if(secondary_cksum != expected_secondary):
+                raise BaseBinaryError.checksum_failed(
+                    secondary_cksum, expected_secondary)
         return payload
 
     if not cc.validate():
@@ -190,20 +205,68 @@ def extract(data):
     return cc.data if not cc.is_nested() else extract(cc.data)
 
 
-# find . -name "*.basebinary" -exec ./bbtool.py {} \;
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--extract", help="file to extract")
-    parser.add_argument("--output", help="output file to write to")
-    args = parser.parse_args()
-    if(args.extract):
-        try:
-            input = open(args.extract, "rb").read()
-            output = extract(input)
-            if(args.output):
-                open(args.output, "wb").write(output)
-        except BaseBinaryError as e:
-            print(e)
-            sys.exit(1)
+def create(productId, version, data):
+    model = ModelInfo.get_info(productId)
+    if productId == 0x66 and len(data) != 0x180000:
+        raise BaseBinaryError("Airport expects exact length of 0x180000")
+    inner_hdr = BaseBinaryHeader(productId, 0x2, version, 0x01)
+    #payload = decrypt_payload(model.key, HDR_MAGIC+bytes(inner_hdr.IV), data)
+    #inner = BaseBinaryContainer.create(inner_hdr, payload).to_bytes()
+    inner = data
+    outer_hdr = BaseBinaryHeader(productId, 0, version, 0x00)
+    outer = BaseBinaryContainer.create(outer_hdr, inner)
+    return outer.to_bytes()
+
+
+def main(args):
+    if args.list:
+        print("Prod\tModel")
+        for k, v in KNOWN_MODELS.items():
+            print("%s\t%s" % ("0x{:02x}".format(k), v[0]))
+        return
+
+    if args.extract and args.create:
+        print("NO!")
+        return
+
+    if args.extract:
+        input = open(args.extract, "rb").read()
+        output = extract(input)
+        if(args.output):
+            open(args.output, "wb").write(output)
+    elif args.create:
+        input = open(args.create, "rb").read()
+        output = create(
+            int(args.product_id, 16),
+            int(args.product_version, 16), input)
+        if(args.output):
+            open(args.output, "wb").write(output)
     else:
         parser.print_help()
+
+
+    # tar create/extract
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c", "--create", help="Create basebinary")
+    parser.add_argument("-x", "--extract", help="Extract basebinary")
+    parser.add_argument("-p", "--product-id",
+                        required="--create" in sys.argv,
+                        help="Product id when creating basebinary")
+    # parser.add_argument("-i", "--input-file", required="--create",
+    #                     help="Payload of")
+    parser.add_argument("-pv", "--product-version",
+                        required="--create" in sys.argv,
+                        help="Product version when creating basebinary")
+    parser.add_argument(
+        "-L", "--list", help="List known product ids", action='store_true')
+    parser.add_argument("-o", "--output", help="output file")
+    try:
+        main(parser.parse_args())
+    except BaseBinaryError as e:
+        print(e)
+        sys.exit(1)
+
+# bb -d bb.basebinary -o foo
+# bb -
