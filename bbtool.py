@@ -223,50 +223,57 @@ def create(productId: int, version: int, data: bytes, encrypt: bool):
 
 
 def main(args):
-    if args.list:
+    if args.subparser_name == "list":
         print("Prod\tModel")
         for k, v in KNOWN_MODELS.items():
             print("%s\t%s" % ("0x{:02x}".format(k), v[0]))
-        return
-
-    if args.extract and args.create:
-        print("NO!")
-        return
-
-    if args.extract:
-        input = open(args.extract, "rb").read()
-        output = extract(input)
+    elif args.subparser_name == "extract":
+        input_file = open(args.input, "rb").read()
+        output = extract(input_file)
         if(args.output):
             open(args.output, "wb").write(output)
-    elif args.create:
-        input = open(args.create, "rb").read()
+    elif args.subparser_name == "create":
+        input_file = open(args.input, "rb").read()
         pid = int(args.product_id, 16)
         ver = int(args.product_version, 16)
-        output = create(pid, ver, input, args.encrypt)
+        output = create(pid, ver, input_file, args.encrypt)
         if(args.output):
             open(args.output, "wb").write(output)
-    else:
-        parser.print_help()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-c", "--create", help="Create basebinary")
-    parser.add_argument("-x", "--extract", help="Extract basebinary")
-    parser.add_argument("-p", "--product-id",
-                        required="--create" in sys.argv,
-                        help="Product id when creating basebinary")
-    parser.add_argument("-pv", "--product-version",
-                        required="--create" in sys.argv,
-                        help="Product version when creating basebinary")
-    parser.add_argument(
+    subparsers = parser.add_subparsers(help='Verbs', dest='subparser_name')
+    extract_parser = subparsers.add_parser(
+        'extract', help='Extract basebinary')
+    extract_parser.add_argument(
+        "-i", "--input", required="extract" in sys.argv, help="input file")
+    extract_parser.add_argument(
+        "-o", "--output", required="extract" in sys.argv, help="output file")
+    create_parser = subparsers.add_parser(
+        'create', help='Create basebinary')
+    create_parser.add_argument(
+        "-pid", "--product-id",
+        required="create" in sys.argv,
+        help="Product id when creating basebinary")
+    create_parser.add_argument(
+        "-pv", "--product-version",
+        required="create" in sys.argv,
+        help="Product version when creating basebinary")
+    create_parser.add_argument(
         "-e", "--encrypt", help="Encrypt basebinary", action='store_true')
-    parser.add_argument(
-        "-L", "--list", help="List known product ids", action='store_true')
-    parser.add_argument("-o", "--output", help="output file")
-    try:
-        main(parser.parse_args())
-    except BaseBinaryError as e:
-        print(e)
-        sys.exit(1)
+    extract_parser = subparsers.add_parser(
+        'list', help='List known product ids')
+    create_parser.add_argument(
+        "-i", "--input", required="create" in sys.argv, help="input file")
+    create_parser.add_argument(
+        "-o", "--output", required="create" in sys.argv, help="output file")
+    args = parser.parse_args()
+    if args.subparser_name == None:
+        parser.print_help()
+    else:
+        try:
+            main(parser.parse_args())
+        except BaseBinaryError as e:
+            print(e)
+            sys.exit(1)
