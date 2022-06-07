@@ -37,24 +37,17 @@ def shuffle_key(key: bytes) -> bytes:
     return bytes([key[i] ^ (i + 0x19) for i in range(len(key))])
 
 
-def decrypt_payload(key: bytes, iv: bytes, input: bytes) -> bytes:
-
+def encrypt_payload(key: bytes, iv: bytes, input: bytes, decrypt: bool) -> bytes:
     def chunkify(lst, n):
         for i in range(0, len(lst), n):
             yield lst[i:i + n]
-
-    def decrypt_chunk(chunk):
+    output = bytearray()
+    for chunk in chunkify(input, 0x8000):
         copy_size = len(chunk) % 0x10
         decrypt_size = len(chunk) - copy_size
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        return cipher.decrypt(chunk[0:decrypt_size]) + chunk[decrypt_size:]
-
-    chunks = map(decrypt_chunk, chunkify(input, 0x8000))
-
-    # return bytes(reduce(lambda x, y: x + y, chunks, bytearray())) is slow: (
-    output = bytearray()
-    for chunk in chunks:
-        output += chunk
+        f = cipher.decrypt if decrypt else cipher.encrypt
+        output += f(chunk[0:decrypt_size]) + chunk[decrypt_size:]
     return bytes(output)
 
 
@@ -63,6 +56,12 @@ class BaseBinaryError(Exception):
     def checksum_failed(expected, got):
         return BaseBinaryError("checksum failed, expected %s, got %s" % (
             hex(expected), hex(got)))
+
+    @staticmethod
+    def checksum_assert(expected, got):
+        if expected != got:
+            raise BaseBinaryError.checksum_failed(
+                expected, got)
 
 
 class BaseBinaryHeader():
@@ -107,6 +106,12 @@ class BaseBinaryHeader():
             self.flags,
             self.unknown4)
 
+    def to_full_iv(self) -> bytes:
+        data = HDR_MAGIC + bytes([self.IV])
+        if len(data) < 0x10:
+            raise BaseBinaryError("IV is too short")
+        return data
+
     @ staticmethod
     def is_valid(data: bytes):
         if len(data) < (HDR_FMT.size + 4):
@@ -138,12 +143,9 @@ class BaseBinaryContainer():
     def to_bytes(self) -> bytes:
         return self.header.to_bytes() + self.data + CKSUM_FMT.pack(self.checksum)
 
-    def validate(self, throw: bool = False) -> bool:
-        expected = zlib.adler32(self.header.to_bytes() + self.data)
-        ok = self.checksum == expected
-        if (not ok) and throw:
-            raise BaseBinaryError.checksum_failed(expected, self.checksum)
-        return ok
+    def validate(self) -> bool:
+        calculated = zlib.adler32(self.header.to_bytes() + self.data)
+        BaseBinaryError.checksum_assert(self.checksum, calculated)
 
     def to_str(self):
         return "Model: 0x%x, Version: 0x%x, Flags: 0x%x, IV: 0x%s, Cksum: %s" % (
@@ -157,7 +159,7 @@ class BaseBinaryContainer():
     def create(header: BaseBinaryHeader, payload: bytes):
         cksum = zlib.adler32(header.to_bytes() + payload)
         cont = BaseBinaryContainer(header, cksum, payload)
-        cont.validate(True)
+        cont.validate()
         return cont
 
 
@@ -184,35 +186,37 @@ def extract(data):
     if cc.is_encrypted():
         if(info.key is None):
             raise BaseBinaryError("Can't decrypt, no known key")
-        payload = decrypt_payload(
-            info.key, HDR_MAGIC+bytes([cc.header.IV]), cc.data)
-        checksum_of = payload if info.post_cksum else cc.data
-        calculated_cksum = zlib.adler32(cc.header.to_bytes() + checksum_of)
-        if calculated_cksum != cc.checksum:
-            raise BaseBinaryError.checksum_failed(
-                cc.checksum, calculated_cksum)
         if not info.post_cksum:
-            secondary_cksum = CKSUM_AX54G_FMT.unpack(payload[-0x20:])[0]
-            expected_secondary = zlib.adler32(payload[:-0x20])
-            if(secondary_cksum != expected_secondary):
-                raise BaseBinaryError.checksum_failed(
-                    secondary_cksum, expected_secondary)
+            cc.validate()
+        payload = encrypt_payload(
+            info.key, cc.header.to_full_iv(), cc.data, True)
+
+        if info.post_cksum:
+            BaseBinaryError.checksum_assert(
+                cc.checksum,
+                zlib.adler32(cc.header.to_bytes() + payload))
+
+        if not info.post_cksum:
+            BaseBinaryError.checksum_assert(
+                CKSUM_AX54G_FMT.unpack(payload[-0x20:])[0],
+                zlib.adler32(payload[:-0x20]))
         return payload
 
-    if not cc.validate():
-        raise BaseBinaryError("checksum failed")
-
+    cc.validate()
     return cc.data if not cc.is_nested() else extract(cc.data)
 
 
-def create(productId, version, data):
+def create(productId: int, version: int, data: bytes, encrypt: bool):
     model = ModelInfo.get_info(productId)
     if productId == 0x66 and len(data) != 0x180000:
         raise BaseBinaryError("Airport expects exact length of 0x180000")
-    inner_hdr = BaseBinaryHeader(productId, 0x2, version, 0x01)
-    #payload = decrypt_payload(model.key, HDR_MAGIC+bytes(inner_hdr.IV), data)
-    #inner = BaseBinaryContainer.create(inner_hdr, payload).to_bytes()
-    inner = data
+    if encrypt:
+        inner_hdr = BaseBinaryHeader(productId, 0x2, version, 0x00)
+        payload = encrypt_payload(
+            model.key, inner_hdr.to_full_iv(), data, False)
+        inner = BaseBinaryContainer.create(inner_hdr, payload).to_bytes()
+    else:
+        inner = data
     outer_hdr = BaseBinaryHeader(productId, 0, version, 0x00)
     outer = BaseBinaryContainer.create(outer_hdr, inner)
     return outer.to_bytes()
@@ -236,16 +240,15 @@ def main(args):
             open(args.output, "wb").write(output)
     elif args.create:
         input = open(args.create, "rb").read()
-        output = create(
-            int(args.product_id, 16),
-            int(args.product_version, 16), input)
+        pid = int(args.product_id, 16)
+        ver = int(args.product_version, 16)
+        output = create(pid, ver, input, args.encrypt)
         if(args.output):
             open(args.output, "wb").write(output)
     else:
         parser.print_help()
 
 
-    # tar create/extract
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -254,11 +257,11 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--product-id",
                         required="--create" in sys.argv,
                         help="Product id when creating basebinary")
-    # parser.add_argument("-i", "--input-file", required="--create",
-    #                     help="Payload of")
     parser.add_argument("-pv", "--product-version",
                         required="--create" in sys.argv,
                         help="Product version when creating basebinary")
+    parser.add_argument(
+        "-e", "--encrypt", help="Encrypt basebinary", action='store_true')
     parser.add_argument(
         "-L", "--list", help="List known product ids", action='store_true')
     parser.add_argument("-o", "--output", help="output file")
@@ -267,6 +270,3 @@ if __name__ == "__main__":
     except BaseBinaryError as e:
         print(e)
         sys.exit(1)
-
-# bb -d bb.basebinary -o foo
-# bb -
