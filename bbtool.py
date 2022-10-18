@@ -15,27 +15,21 @@ CKSUM_AX54G_FMT = struct.Struct(">I28x")
 
 KNOWN_MODELS = {
     3: ("AirPort Extreme 802.11g", None),
-    102: ("AirPort Express 802.11g", "1f1ba10645645be2bab3c80f2e8eaae1"),
+    102: ("AirPort Express 802.11g", "0601ba1a587a44c29b91eb2b0ba88dc9"),
     104: ("AirPort Extreme 802.11n (1st Generation)", None),
     105: ("AirPort Extreme 802.11n (2nd Generation)", None),
     106: ("AirPort Time Capsule 802.11n (1st Generation)", None),
-    107: ("AirPort Express 802.11n (1st Generation)", "5249c351028bf1fd2bd1849e28b23f24"),
-    108: ("AirPort Extreme 802.11n (3rd Generation)", "bb7deb0970d8ee2e00fa46cb1c3c098e"),
+    107: ("AirPort Express 802.11n (1st Generation)", "4b53d84d1f95eedd0af3a7ba0d94180c"),
+    108: ("AirPort Extreme 802.11n (3rd Generation)", "a267f0156dc6f10e21d865ef391a2ea6"),
     109: ("AirPort Time Capsule 802.11n (2nd Generation)", None),
     113: ("AirPort Time Capsule 802.11n (3rd Generation)", None),
     114: ("AirPort Extreme 802.11n (4th Generation)", None),
-    115: ("AirPort Express 802.11n (2nd Generation)", "1075e806f4770cd4763bd285a64e9174"),
+    115: ("AirPort Express 802.11n (2nd Generation)", "096ff31ae96913f45719f1a18368b65c"),
     116: ("AirPort Time Capsule 802.11n (4th Generation)", None),
     117: ("AirPort Extreme 802.11n (5th Generation)", None),
     119: ("AirPort Time Capsule 802.11ac", None),
-    120: ("AirPort Extreme 802.11ac", "688cdd3b1b6bdda207b6cec2735292d2"),
+    120: ("AirPort Extreme 802.11ac", "7196c6270675c2822694ede65674b5fa"),
 }
-
-
-def shuffle_key(key: bytes) -> bytes:
-    # Apple does a shuffle of the decryption key stored in firmware
-    return bytes([key[i] ^ (i + 0x19) for i in range(len(key))])
-
 
 def encrypt_payload(key: bytes, iv: bytes, input: bytes, decrypt: bool) -> bytes:
     def chunkify(lst, n):
@@ -175,7 +169,7 @@ class ModelInfo():
         if info is None:
             raise BaseBinaryError("Unknown model %s" % hex(model), None)
         (name, key) = info
-        real_key = None if key is None else shuffle_key(bytes.fromhex(key))
+        real_key = None if key is None else bytes.fromhex(key)
         return ModelInfo(name, real_key, model != 102)
 
 
